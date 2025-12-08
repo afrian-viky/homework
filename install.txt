@@ -25,3 +25,4 @@ CREATE TABLE peminjaman (
 
 Jangan lupa masukkan data buku supaya bisa dipinjam
 
+Selesai
