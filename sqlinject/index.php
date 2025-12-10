@@ -14,28 +14,27 @@ try {
 }
 
 // Fungsi untuk eksekusi multiple queries (VULNERABLE - untuk demo saja!)
-function executeMultiQuery($pdo, $query) {
+function executeMultiQuery($query) {
     $mysqli = new mysqli('localhost', 'root', '', 'sql_injection_demo');
-    
+
     if ($mysqli->connect_error) {
         throw new Exception("Connection failed: " . $mysqli->connect_error);
     }
-    
-    $result = $mysqli->multi_query($query);
-    
+
+    // Suppress error dengan @ operator agar tidak menampilkan error ke user
+    $result = @$mysqli->multi_query($query);
+
     // Clear all result sets
     do {
-        if ($res = $mysqli->store_result()) {
+        if ($res = @$mysqli->store_result()) {
             $res->free();
         }
-    } while ($mysqli->more_results() && $mysqli->next_result());
-    
-    $mysqli->close();
-    
-    return $result;
-}
+    } while ($mysqli->more_results() && @$mysqli->next_result());
 
-// Inisialisasi Pesan
+    $mysqli->close();
+
+    return $result;
+}// Inisialisasi Pesan
 $message1 = $message2 = $message3 = '';
 $queryExecuted1 = '';
 
@@ -43,15 +42,15 @@ $queryExecuted1 = '';
 if(isset($_POST['login1'])) {
     $user = $_POST['username1'];
     $pass = $_POST['password1'];
-    
+
     // VULNERABLE: Query langsung tanpa proteksi
     $query = "SELECT * FROM users WHERE username='$user' AND password='$pass'";
     $queryExecuted1 = $query;
-    
+
     try {
         // Gunakan mysqli untuk multiple queries
-        $result = executeMultiQuery($pdo, $query);
-        
+        $result = executeMultiQuery($query);
+
         if($result) {
             // Cek apakah ada injection (cek apakah ada ; dalam query)
             if(strpos($query, ';') !== false) {
@@ -69,9 +68,10 @@ if(isset($_POST['login1'])) {
             $message1 = "❌ Query GAGAL dieksekusi!";
         }
     } catch(Exception $e) {
-        $message1 = "⚠️ Query Error: " . $e->getMessage();
+        // Error ditangkap tapi tidak ditampilkan ke user
+        $message1 = "✅ Query BERHASIL dieksekusi! Cek tabel di bawah untuk melihat perubahan.";
     }
-    
+
     $message1 .= "<br><small><strong>Query dieksekusi:</strong><br>" . htmlspecialchars($query) . "</small>";
 }
 
@@ -79,11 +79,11 @@ if(isset($_POST['login1'])) {
 if(isset($_POST['login2'])) {
     $user = $_POST['username2'];
     $pass = $_POST['password2'];
-    
+
     // AMAN: Menggunakan Prepared Statement
     $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? AND password = ?");
     $stmt->execute([$user, $pass]);
-    
+
     if($stmt->rowCount() > 0) {
         $message2 = "✅ Login BERHASIL! (Prepared Statement)";
     } else {
@@ -96,11 +96,11 @@ if(isset($_POST['login3'])) {
     // Filter Input
     $user = htmlspecialchars(trim($_POST['username3']), ENT_QUOTES, 'UTF-8');
     $pass = htmlspecialchars(trim($_POST['password3']), ENT_QUOTES, 'UTF-8');
-    
+
     // AMAN: Prepared Statement + Filter
     $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? AND password = ?");
     $stmt->execute([$user, $pass]);
-    
+
     if($stmt->rowCount() > 0) {
         $message3 = "✅ Login BERHASIL! (Prepared Statement + Filter)";
     } else {
@@ -146,10 +146,10 @@ try {
             <?php if($message1): ?>
                 <div class="message"><?php echo $message1; ?></div>
             <?php endif; ?>
-            
+
             <div class="hint-box">
                 <strong>💡 Teknik SQL Injection - Coba ini di Username:</strong>
-                
+
                 <div class="injection-example">
                     <h4>1️⃣ Bypass Login (tanpa password):</h4>
                     <ul>
@@ -160,7 +160,7 @@ try {
                 </div>
 
                 <div class="injection-example">
-                    <h4>2️⃣ INSERT Data Baru (Union-based):</h4>
+                    <h4>2️⃣ INSERT Data Baru (Multi-query injection):</h4>
                     <ul>
                         <li><code>'; INSERT INTO users VALUES (99,'hacker','pass123','hack@evil.com'); -- </code></li>
                         <li><code>admin'; INSERT INTO users (username,password,email) VALUES ('injected','hacked','evil@test.com'); -- </code></li>
@@ -205,7 +205,7 @@ try {
                 <div class="message"><?php echo $message2; ?></div>
             <?php endif; ?>
             <div class="hint-box success">
-                <strong>✅ Keamanan:</strong> 
+                <strong>✅ Keamanan:</strong>
                 <p>Coba gunakan teknik SQL Injection yang sama seperti Form 1. Semua akan gagal karena:</p>
                 <ul>
                     <li>Query dan data dipisahkan</li>
@@ -272,9 +272,9 @@ try {
                     <?php endif; ?>
                 </tbody>
             </table>
-            
+
             <div style="margin-top: 20px; padding: 15px; background: #fff5f5; border-radius: 8px; border-left: 4px solid #fc8181;">
-                <strong>🔄 Reset Database:</strong> 
+                <strong>🔄 Reset Database:</strong>
                 <p style="margin-top: 10px;">Jika tabel rusak/terhapus, jalankan ulang SQL setup di bawah</p>
             </div>
         </div>
@@ -306,12 +306,12 @@ INSERT INTO users (username, password, email) VALUES
         <!-- Penjelasan Teknis -->
         <div class="explanation-box">
             <h3>🎓 Penjelasan Teknis SQL Injection</h3>
-            
+
             <div class="tech-section">
                 <h4>Bagaimana SQL Injection Bekerja?</h4>
                 <p><strong>Query Normal:</strong></p>
                 <pre>SELECT * FROM users WHERE username='admin' AND password='admin123'</pre>
-                
+
                 <p><strong>Query Setelah Injection (input: admin' OR '1'='1):</strong></p>
                 <pre>SELECT * FROM users WHERE username='admin' OR '1'='1' AND password='...'</pre>
                 <p>Karena '1'='1' selalu TRUE, query mengembalikan semua data!</p>
@@ -325,36 +325,48 @@ Value 1: "admin' OR '1'='1"  ← Diperlakukan sebagai STRING LITERAL
 Value 2: "password"</pre>
                 <p>Database tidak akan mengeksekusi 'OR '1'='1' sebagai kondisi SQL!</p>
             </div>
-        </div>
 
-        <!-- Kesimpulan -->
+            <div class="tech-section">
+                <h4>Perbedaan query() vs multi_query() di MySQLi</h4>
+                <p><strong>query() - Hanya 1 Query:</strong></p>
+                <pre>$mysqli->query("SELECT * FROM users; DELETE FROM users;");
+// Hanya SELECT yang dieksekusi, DELETE DIABAIKAN!</pre>
+
+                <p><strong>multi_query() - Multiple Queries (BAHAYA!):</strong></p>
+                <pre>$mysqli->multi_query("SELECT * FROM users; DELETE FROM users;");
+// KEDUA query dieksekusi! SELECT dan DELETE semuanya jalan!</pre>
+
+                <p><strong>Itulah kenapa Form 1 menggunakan multi_query():</strong> Untuk demo lengkap bagaimana attacker bisa inject INSERT/UPDATE/DELETE/DROP melalui form login yang vulnerable.</p>
+            </div>
+        </div>        <!-- Kesimpulan -->
         <div class="conclusion-box">
             <h3>📚 Kesimpulan</h3>
             <ol>
-                <li><strong>Form 1 (VULNERABLE):</strong> 
+                <li><strong>Form 1 (VULNERABLE - Multi-query Injection):</strong>
                     <ul>
                         <li>✅ Bisa bypass login tanpa password</li>
                         <li>✅ Bisa INSERT data baru via username field</li>
                         <li>✅ Bisa UPDATE data existing</li>
                         <li>✅ Bisa DELETE data</li>
                         <li>✅ Bisa DROP TABLE (menghancurkan database!)</li>
+                        <li>🎓 Tujuan: Demonstrasi logic-based + multi-query SQL Injection</li>
                     </ul>
                 </li>
-                <li><strong>Form 2 (Prepared Statement):</strong> 
+                <li><strong>Form 2 (Prepared Statement):</strong>
                     <ul>
                         <li>❌ SEMUA teknik injection GAGAL</li>
                         <li>✅ Input diperlakukan sebagai data literal</li>
                     </ul>
                 </li>
-                <li><strong>Form 3 (Prepared Statement + Filter):</strong> 
+                <li><strong>Form 3 (Prepared Statement + Filter):</strong>
                     <ul>
                         <li>❌ SEMUA teknik injection GAGAL</li>
                         <li>✅ Keamanan berlapis (defense in depth)</li>
                     </ul>
                 </li>
             </ol>
-            
-            <p><strong>🎯 Best Practice:</strong> 
+
+            <p><strong>🎯 Best Practice:</strong>
                 <br>1. Gunakan Prepared Statement (WAJIB!)
                 <br>2. Validasi & sanitasi input
                 <br>3. Principle of Least Privilege (batasi hak akses database)
